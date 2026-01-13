@@ -63,12 +63,14 @@
     .stat { font-weight: bold; }
   </style>
 </head>
+
 <body>
 
 <header>Simple Karteikarten</header>
 
 <main>
 
+<!-- START -->
 <div id="home" class="view active">
   <button onclick="startPractice()">Üben</button>
   <button onclick="showView('add-question')">Neue Karteikarte anlegen</button>
@@ -76,6 +78,7 @@
   <p id="homeHint" class="hint"></p>
 </div>
 
+<!-- FRAGE -->
 <div id="add-question" class="view">
   <div class="box">
     <input id="questionInput" placeholder="Frage eingeben">
@@ -83,6 +86,7 @@
   </div>
 </div>
 
+<!-- ANTWORT -->
 <div id="add-answer" class="view">
   <div class="box">
     <textarea id="answerInput" placeholder="Antwort eingeben"></textarea>
@@ -93,6 +97,7 @@
   </div>
 </div>
 
+<!-- ÜBEN -->
 <div id="practice" class="view">
   <div class="box">
     <p id="cardText"></p>
@@ -106,6 +111,7 @@
   </div>
 </div>
 
+<!-- ENDE -->
 <div id="end" class="view">
   <p id="statText" class="stat"></p>
   <p id="endHint" class="hint"></p>
@@ -117,19 +123,27 @@
 </main>
 
 <script>
+/* ================= STATE ================= */
 const KEY = "simple-karteikarten";
 let cards = JSON.parse(localStorage.getItem(KEY) || "[]");
+
+/* Üben-Session (NICHT persistent!) */
 let practiceCards = [];
+let sessionResults = [];
+let practiceActive = false;
+
 let index = 0;
 let tempQuestion = "";
 let totalQuestions = 0;
 let knownAnswers = 0;
 
+/* ================= VIEW ================= */
 function showView(id) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById(id).classList.add("active");
 }
 
+/* ================= ANLEGEN ================= */
 function saveQuestion() {
   tempQuestion = questionInput.value.trim();
   if (!tempQuestion) return;
@@ -140,22 +154,30 @@ function saveQuestion() {
 function saveCard(next) {
   const a = answerInput.value.trim();
   if (!a) return;
+
   cards.push({ question: tempQuestion, answer: a, streak: 0 });
   localStorage.setItem(KEY, JSON.stringify(cards));
   answerInput.value = "";
+
   showView(next ? "add-question" : "home");
 }
 
+/* ================= ÜBEN (SESSION-BASIERT) ================= */
 function startPractice() {
   if (cards.length < 2) {
     homeHint.textContent = "Bitte mindestens zwei Karten anlegen";
     return;
   }
+
   homeHint.textContent = "";
-  practiceCards = [...cards];
+  practiceCards = cards.map(c => ({ ...c })); // tiefe Kopie
+  sessionResults = [];
+  practiceActive = true;
+
   index = 0;
   knownAnswers = 0;
   totalQuestions = practiceCards.length;
+
   showView("practice");
   showQuestion();
 }
@@ -178,27 +200,45 @@ function showAnswer() {
 
 function answerCard(known) {
   const card = practiceCards[index];
-  const realCard = cards.find(c =>
-    c.question === card.question && c.answer === card.answer
-  );
-  if (known) {
-    knownAnswers++;
-    realCard.streak++;
-  } else {
-    realCard.streak = 0;
-  }
-  if (realCard.streak >= 2) {
-    cards = cards.filter(c => c !== realCard);
-  }
-  localStorage.setItem(KEY, JSON.stringify(cards));
+
+  sessionResults.push({
+    question: card.question,
+    answer: card.answer,
+    known
+  });
+
+  if (known) knownAnswers++;
+
   index++;
   showQuestion();
 }
 
+/* ================= ENDE (JETZT ERST SPEICHERN!) ================= */
 function endCheck() {
+  // Session-Ergebnisse anwenden
+  sessionResults.forEach(r => {
+    const realCard = cards.find(c =>
+      c.question === r.question && c.answer === r.answer
+    );
+    if (!realCard) return;
+
+    if (r.known) {
+      realCard.streak++;
+    } else {
+      realCard.streak = 0;
+    }
+  });
+
+  // Karten mit streak >= 2 löschen
+  cards = cards.filter(c => c.streak < 2);
+  localStorage.setItem(KEY, JSON.stringify(cards));
+
+  practiceActive = false;
+
   showView("end");
   statText.textContent =
     `Du hast ${knownAnswers} von ${totalQuestions} Fragen gewusst (richtig beantwortet).`;
+
   if (cards.length < 2) {
     endHint.textContent =
       "Bitte mindestens zwei Karten anlegen & Zurück zur Startansicht drücken";
@@ -209,6 +249,7 @@ function endCheck() {
   }
 }
 
+/* ================= EXPORT ================= */
 function exportCards() {
   const data = cards.map(c => ({ question: c.question, answer: c.answer }));
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -218,6 +259,7 @@ function exportCards() {
   a.click();
 }
 
+/* ================= IMPORT ================= */
 function isValidImportData(data) {
   return Array.isArray(data) &&
     data.every(c =>
@@ -231,9 +273,11 @@ function importCards() {
   const input = document.createElement("input");
   input.type = "file";
   input.accept = "application/json";
+
   input.onchange = e => {
     const file = e.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = () => {
       let parsed;
@@ -243,22 +287,27 @@ function importCards() {
         homeHint.textContent = "Import fehlgeschlagen.";
         return;
       }
+
       if (!isValidImportData(parsed)) {
         homeHint.textContent = "Ungültige Importdaten.";
         return;
       }
+
       parsed.forEach(c =>
         cards.push({ question: c.question.trim(), answer: c.answer.trim(), streak: 0 })
       );
+
       localStorage.setItem(KEY, JSON.stringify(cards));
       homeHint.textContent = `${parsed.length} Karten importiert.`;
       homeHint.className = "success";
     };
     reader.readAsText(file);
   };
+
   input.click();
 }
 
+/* ================= SERVICE WORKER ================= */
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("service-worker.js");
 }

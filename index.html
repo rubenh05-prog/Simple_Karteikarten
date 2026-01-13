@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Simple Karteikarten</title>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#000000">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Simple Karteikarten">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      height: 100vh;
+    }
+    header {
+      position: fixed;
+      top: 10px;
+      left: 16px;
+      font-weight: bold;
+      z-index: 10;
+    }
+    main {
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .view {
+      display: none;
+      width: 90%;
+      max-width: 420px;
+      text-align: center;
+    }
+    .active { display: block; }
+    .box {
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 12px;
+      width: 100%;
+      margin: 6px 0;
+      font-size: 16px;
+    }
+    .row { display: flex; gap: 10px; }
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    .hint { color: red; }
+    .success { color: green; }
+    .stat { font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<header>Simple Karteikarten</header>
+
+<main>
+
+<div id="home" class="view active">
+  <button onclick="startPractice()">Üben</button>
+  <button onclick="showView('add-question')">Neue Karteikarte anlegen</button>
+  <button onclick="importCards()">Import</button>
+  <p id="homeHint" class="hint"></p>
+</div>
+
+<div id="add-question" class="view">
+  <div class="box">
+    <input id="questionInput" placeholder="Frage eingeben">
+    <button onclick="saveQuestion()">Speichern & zur Antwort</button>
+  </div>
+</div>
+
+<div id="add-answer" class="view">
+  <div class="box">
+    <textarea id="answerInput" placeholder="Antwort eingeben"></textarea>
+    <div class="row">
+      <button onclick="saveCard(true)">Speichern & nächste Frage</button>
+      <button onclick="saveCard(false)">Speichern & zur Startansicht</button>
+    </div>
+  </div>
+</div>
+
+<div id="practice" class="view">
+  <div class="box">
+    <p id="cardText"></p>
+    <button id="nextBtn" onclick="showAnswer()">Weiter</button>
+    <div id="answerButtons" style="display:none;">
+      <div class="row">
+        <button onclick="answerCard(true)">Gewusst</button>
+        <button onclick="answerCard(false)">Nicht gewusst</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="end" class="view">
+  <p id="statText" class="stat"></p>
+  <p id="endHint" class="hint"></p>
+  <button onclick="exportCards()">Fragen & Antworten exportieren</button>
+  <button onclick="showView('home')">Zurück zur Startansicht</button>
+  <button id="againBtn" onclick="startPractice()">Noch ein Durchgang</button>
+</div>
+
+</main>
+
+<script>
+const KEY = "simple-karteikarten";
+let cards = JSON.parse(localStorage.getItem(KEY) || "[]");
+let practiceCards = [];
+let index = 0;
+let tempQuestion = "";
+let totalQuestions = 0;
+let knownAnswers = 0;
+
+function showView(id) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+function saveQuestion() {
+  tempQuestion = questionInput.value.trim();
+  if (!tempQuestion) return;
+  questionInput.value = "";
+  showView("add-answer");
+}
+
+function saveCard(next) {
+  const a = answerInput.value.trim();
+  if (!a) return;
+  cards.push({ question: tempQuestion, answer: a, streak: 0 });
+  localStorage.setItem(KEY, JSON.stringify(cards));
+  answerInput.value = "";
+  showView(next ? "add-question" : "home");
+}
+
+function startPractice() {
+  if (cards.length < 2) {
+    homeHint.textContent = "Bitte mindestens zwei Karten anlegen";
+    return;
+  }
+  homeHint.textContent = "";
+  practiceCards = [...cards];
+  index = 0;
+  knownAnswers = 0;
+  totalQuestions = practiceCards.length;
+  showView("practice");
+  showQuestion();
+}
+
+function showQuestion() {
+  if (index >= practiceCards.length) {
+    endCheck();
+    return;
+  }
+  cardText.textContent = practiceCards[index].question;
+  nextBtn.style.display = "block";
+  answerButtons.style.display = "none";
+}
+
+function showAnswer() {
+  cardText.textContent = practiceCards[index].answer;
+  nextBtn.style.display = "none";
+  answerButtons.style.display = "block";
+}
+
+function answerCard(known) {
+  const card = practiceCards[index];
+  const realCard = cards.find(c =>
+    c.question === card.question && c.answer === card.answer
+  );
+  if (known) {
+    knownAnswers++;
+    realCard.streak++;
+  } else {
+    realCard.streak = 0;
+  }
+  if (realCard.streak >= 2) {
+    cards = cards.filter(c => c !== realCard);
+  }
+  localStorage.setItem(KEY, JSON.stringify(cards));
+  index++;
+  showQuestion();
+}
+
+function endCheck() {
+  showView("end");
+  statText.textContent =
+    `Du hast ${knownAnswers} von ${totalQuestions} Fragen gewusst (richtig beantwortet).`;
+  if (cards.length < 2) {
+    endHint.textContent =
+      "Bitte mindestens zwei Karten anlegen & Zurück zur Startansicht drücken";
+    againBtn.style.display = "none";
+  } else {
+    endHint.textContent = "";
+    againBtn.style.display = "block";
+  }
+}
+
+function exportCards() {
+  const data = cards.map(c => ({ question: c.question, answer: c.answer }));
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "simple-karteikarten-export.json";
+  a.click();
+}
+
+function isValidImportData(data) {
+  return Array.isArray(data) &&
+    data.every(c =>
+      typeof c.question === "string" &&
+      typeof c.answer === "string" &&
+      c.question.trim() && c.answer.trim()
+    );
+}
+
+function importCards() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json";
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch {
+        homeHint.textContent = "Import fehlgeschlagen.";
+        return;
+      }
+      if (!isValidImportData(parsed)) {
+        homeHint.textContent = "Ungültige Importdaten.";
+        return;
+      }
+      parsed.forEach(c =>
+        cards.push({ question: c.question.trim(), answer: c.answer.trim(), streak: 0 })
+      );
+      localStorage.setItem(KEY, JSON.stringify(cards));
+      homeHint.textContent = `${parsed.length} Karten importiert.`;
+      homeHint.className = "success";
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+
+</body>
+</html>

@@ -15,17 +15,48 @@ A simple, fast Progressive Web App (PWA) for learning with flashcards – usable
 🔄 No registration required
 
 🚀 Installation
-🪟 Windows (Chrome / Edge / Firefox*)
+🪟 Windows / macOS / Linux (Offline Desktop Installation)
 
-Open the website in your browser
+This method works with the current PWA standards, with one important limitation explained below.
 
-Click “Install” / the app icon in the address bar
+Steps
 
-Confirm the installation
+Extract the project folder
 
-The app launches like a regular desktop application
+Open a terminal in the project directory
 
-* Firefox: Installation may be available via the browser menu → “Add to Home Screen”
+Start a local web server:
+
+python -m http.server 8080
+
+
+Open the app in a browser:
+
+http://localhost:8080
+
+
+Click “Install” in the browser (address bar or menu)
+
+✅ What works
+
+The app runs locally via localhost
+
+PWA installation prompt appears in Chrome / Edge
+
+Offline functionality works after installation
+
+No internet connection required after install
+
+⚠️ Important limitations (current state)
+
+HTTPS is normally required for PWAs, but
+👉 localhost is explicitly allowed by modern browsers
+
+Firefox desktop does not support full PWA installation (runs as tab or shortcut)
+
+Safari desktop does not support installable PWAs
+
+Updates require restarting the local server and reloading the app
 
 🍎 iOS (Safari – important)
 

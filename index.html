@@ -43,13 +43,16 @@
       background: #fff;
       padding: 20px;
       border-radius: 12px;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
     }
     button {
       padding: 12px;
       width: 100%;
       margin: 6px 0;
       font-size: 16px;
+    }
+    button:disabled {
+      opacity: 0.5;
     }
     .row { display: flex; gap: 10px; }
     input, textarea {
@@ -61,6 +64,11 @@
     .hint { color: red; }
     .success { color: green; }
     .stat { font-weight: bold; }
+    .warn {
+      color: #b00020;
+      font-size: 14px;
+      margin-top: 8px;
+    }
   </style>
 </head>
 
@@ -73,7 +81,7 @@
 <!-- START -->
 <div id="home" class="view active">
   <button onclick="startPractice()">Üben</button>
-  <button onclick="showView('add-question')">Neue Karteikarte anlegen</button>
+  <button onclick="goAddQuestion()">Neue Karteikarte anlegen</button>
   <button onclick="importCards()">Import</button>
   <p id="homeHint" class="hint"></p>
 </div>
@@ -91,7 +99,7 @@
   <div class="box">
     <textarea id="answerInput" placeholder="Antwort eingeben"></textarea>
     <div class="row">
-      <button onclick="saveCard(true)">Speichern & nächste Frage</button>
+      <button id="saveNextBtn" onclick="saveCard(true)">Speichern & nächste Frage</button>
       <button onclick="saveCard(false)">Speichern & zur Startansicht</button>
     </div>
   </div>
@@ -108,6 +116,7 @@
         <button onclick="answerCard(false)">Nicht gewusst</button>
       </div>
     </div>
+    <p id="practiceWarn" class="warn"></p>
   </div>
 </div>
 
@@ -123,11 +132,13 @@
 </main>
 
 <script>
-/* ================= STATE ================= */
+/* ================= KONSTANTEN ================= */
 const KEY = "simple-karteikarten";
+const MAX_CARDS = 30;
+
+/* ================= STATE ================= */
 let cards = JSON.parse(localStorage.getItem(KEY) || "[]");
 
-/* Üben-Session (NICHT persistent!) */
 let practiceCards = [];
 let sessionResults = [];
 let practiceActive = false;
@@ -143,26 +154,42 @@ function showView(id) {
   document.getElementById(id).classList.add("active");
 }
 
+/* ================= START / LIMIT ================= */
+function goAddQuestion() {
+  if (cards.length >= MAX_CARDS) {
+    homeHint.textContent =
+      "Limit von 30 Karten erreicht, bitte zuerst Übung machen.";
+    return;
+  }
+  homeHint.textContent = "";
+  showView("add-question");
+}
+
 /* ================= ANLEGEN ================= */
 function saveQuestion() {
   tempQuestion = questionInput.value.trim();
   if (!tempQuestion) return;
   questionInput.value = "";
   showView("add-answer");
+
+  // Button-Status prüfen
+  saveNextBtn.disabled = cards.length + 1 >= MAX_CARDS;
 }
 
 function saveCard(next) {
   const a = answerInput.value.trim();
   if (!a) return;
 
-  cards.push({ question: tempQuestion, answer: a, streak: 0 });
-  localStorage.setItem(KEY, JSON.stringify(cards));
-  answerInput.value = "";
+  if (cards.length < MAX_CARDS) {
+    cards.push({ question: tempQuestion, answer: a, streak: 0 });
+    localStorage.setItem(KEY, JSON.stringify(cards));
+  }
 
+  answerInput.value = "";
   showView(next ? "add-question" : "home");
 }
 
-/* ================= ÜBEN (SESSION-BASIERT) ================= */
+/* ================= ÜBEN ================= */
 function startPractice() {
   if (cards.length < 2) {
     homeHint.textContent = "Bitte mindestens zwei Karten anlegen";
@@ -170,7 +197,7 @@ function startPractice() {
   }
 
   homeHint.textContent = "";
-  practiceCards = cards.map(c => ({ ...c })); // tiefe Kopie
+  practiceCards = cards.map(c => ({ ...c }));
   sessionResults = [];
   practiceActive = true;
 
@@ -187,9 +214,15 @@ function showQuestion() {
     endCheck();
     return;
   }
+
   cardText.textContent = practiceCards[index].question;
   nextBtn.style.display = "block";
   answerButtons.style.display = "none";
+
+  practiceWarn.textContent =
+    practiceActive && index < 3
+      ? "⚠️ Hinweis: Wenn du die App jetzt schließt, wird dieser Durchgang nicht gespeichert."
+      : "";
 }
 
 function showAnswer() {
@@ -200,36 +233,26 @@ function showAnswer() {
 
 function answerCard(known) {
   const card = practiceCards[index];
-
   sessionResults.push({
     question: card.question,
     answer: card.answer,
     known
   });
-
   if (known) knownAnswers++;
-
   index++;
   showQuestion();
 }
 
-/* ================= ENDE (JETZT ERST SPEICHERN!) ================= */
+/* ================= ENDE ================= */
 function endCheck() {
-  // Session-Ergebnisse anwenden
   sessionResults.forEach(r => {
-    const realCard = cards.find(c =>
+    const real = cards.find(c =>
       c.question === r.question && c.answer === r.answer
     );
-    if (!realCard) return;
-
-    if (r.known) {
-      realCard.streak++;
-    } else {
-      realCard.streak = 0;
-    }
+    if (!real) return;
+    real.streak = r.known ? real.streak + 1 : 0;
   });
 
-  // Karten mit streak >= 2 löschen
   cards = cards.filter(c => c.streak < 2);
   localStorage.setItem(KEY, JSON.stringify(cards));
 
@@ -239,14 +262,11 @@ function endCheck() {
   statText.textContent =
     `Du hast ${knownAnswers} von ${totalQuestions} Fragen gewusst (richtig beantwortet).`;
 
-  if (cards.length < 2) {
-    endHint.textContent =
-      "Bitte mindestens zwei Karten anlegen & Zurück zur Startansicht drücken";
-    againBtn.style.display = "none";
-  } else {
-    endHint.textContent = "";
-    againBtn.style.display = "block";
-  }
+  againBtn.style.display = cards.length >= 2 ? "block" : "none";
+  endHint.textContent =
+    cards.length < 2
+      ? "Bitte mindestens zwei Karten anlegen & Zurück zur Startansicht drücken"
+      : "";
 }
 
 /* ================= EXPORT ================= */
@@ -260,15 +280,6 @@ function exportCards() {
 }
 
 /* ================= IMPORT ================= */
-function isValidImportData(data) {
-  return Array.isArray(data) &&
-    data.every(c =>
-      typeof c.question === "string" &&
-      typeof c.answer === "string" &&
-      c.question.trim() && c.answer.trim()
-    );
-}
-
 function importCards() {
   const input = document.createElement("input");
   input.type = "file";
@@ -288,19 +299,30 @@ function importCards() {
         return;
       }
 
-      if (!isValidImportData(parsed)) {
-        homeHint.textContent = "Ungültige Importdaten.";
+      const freeSlots = MAX_CARDS - cards.length;
+      if (freeSlots <= 0) {
+        homeHint.textContent =
+          "Limit von 30 Karten erreicht, bitte zuerst Übung machen.";
         return;
       }
 
-      parsed.forEach(c =>
+      const valid = parsed.filter(c =>
+        typeof c.question === "string" &&
+        typeof c.answer === "string" &&
+        c.question.trim() && c.answer.trim()
+      );
+
+      const toImport = valid.slice(0, freeSlots);
+      toImport.forEach(c =>
         cards.push({ question: c.question.trim(), answer: c.answer.trim(), streak: 0 })
       );
 
       localStorage.setItem(KEY, JSON.stringify(cards));
-      homeHint.textContent = `${parsed.length} Karten importiert.`;
+      homeHint.textContent =
+        `${toImport.length} Karten importiert${valid.length > freeSlots ? " (Limit erreicht)" : ""}.`;
       homeHint.className = "success";
     };
+
     reader.readAsText(file);
   };
 
